@@ -414,12 +414,7 @@ ANOVA väljundis vaatame F-statistikut ja p-väärtust (Pr(>F)). Kui p < 0,05, s
 tukey <- TukeyHSD(model_aov)
 par(mar = c(5, 18, 4, 2))
 plot(tukey, las = 1, cex.axis = 0.55,
-<<<<<<< HEAD
      xlab = "Keskväärtuste vahe (95% usaldusintervall)")
-=======
-     xlab = "Keskväärtuste vahe (95% usaldusintervall)",
-     main = "Tukey HSD: sõidukiklasside paariti võrdlus")
->>>>>>> 840da2f539a07911da1eb3da5e31ea44cfbc6186
 ```
 
 Tukey HSD post-hoc test näitab, millised konkreetsed klassipaarid üksteisest statistiliselt oluliselt erinevad. Graafikul tähistab nulljoont (0) mitte lõikuv usaldusintervall statistiliselt olulist erinevust.
