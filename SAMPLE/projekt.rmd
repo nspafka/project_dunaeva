@@ -1,0 +1,67 @@
+---
+title: "TalTech Virumaa kolledži üliõpilaste enesehinnangu analüüs"
+
+subtitle: "Projekt õppeaines RAM0580 Andmeanalüüs"
+
+author: "<br>Koostajad: Tudeng 1, Tudeng 2 <br>"
+
+date: "Esitatud: 15.05.2021 <br>"
+
+
+output: 
+  html_document:
+    toc: true
+    toc_depth: 4
+    toc_float: 
+      collapsed: false
+    number_sections: true
+    theme: default
+    code_folding: hide
+---
+
+
+<br><br>
+
+# Sissejuhatus
+
+## Andmestiku kirjeldus
+
+```{r}
+#
+#
+```
+
+
+## Uurimiseesmärk
+
+
+```{r}
+#
+#
+```
+
+## Tööhüpoteesid (tööülesanded)
+
+```{r}
+#
+#
+```
+
+
+## Uuringu käik
+
+<br><br>
+
+# Andmestiku esmaanalüüs
+
+
+# Seoste analüüs
+
+
+# Kokkuvõte
+
+
+# Kasutatud materjalid
+
+
+# Lisa

@@ -1,0 +1,718 @@
+---
+title: "FuelConsumption andmestiku eelanalüüs"
+subtitle: "Seminaritöö 1 õppeaines RAM0580 Andmeanalüüs"
+author: "Koostajad: Maksim Ljubimov, Maksim Lupanov, Pavel Sarapov, Samuil Batsinski"
+date: "04.03.2026"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+    number_sections: true
+    code_folding: show
+---
+
+
+Käesolevas töös teeme andmestiku **FuelConsumption.csv** puhastamise, ettevalmistamise ja kirjeldava analüüsi skeemi järgi (analoogselt Moodle'i näitele).
+
+# Andmete lugemine
+  
+```{r message=FALSE, warning=FALSE}
+# Paketid (vajadusel paigaldada: install.packages(c("tidyverse","janitor","skimr","DT")))
+library(tidyverse)
+library(janitor)
+library(skimr)
+library(DT)
+
+# Andmete lugemine
+raw <- read.csv("FuelConsumption.csv", check.names = FALSE)
+
+# Veerunimed mugavamaks: snake_case (nt "CO2 Emissions(g/km)" -> "co2_emissions_g_km")
+df <- clean_names(raw)
+
+# Tabeli kuvamine (nagu näites)
+datatable(
+  df,
+  options = list(scrollX = TRUE, pageLength = 10, searching = FALSE, scroller = TRUE, scrollY = 300)
+)
+```
+
+# Ülevaade funktsiooni str() abil
+
+Funktsioon `str()` annab kiire ülevaate: mitu objekti, mitu tunnust ja mis tüüpi tunnused on.
+
+```{r}
+str(df)
+
+# Mitu objekti (ridu) ja mitu tunnust (veeru)?
+n_obj <- nrow(df)
+n_var <- ncol(df)
+n_obj; n_var
+```
+Tulemuse põhjal: andmestikus on `r n_obj`** objekti ja `r n_var`** tunnust.
+
+
+## Ülevaade funktsiooni skim() abil
+
+Funktsioon `skim()` (paketist **skimr**) annab struktureeritud kokkuvõtte, sh puuduvaid väärtusi ja tüübisagedusi.
+
+```{r}
+skim(df)
+```
+
+skim_variable(tunnuse nimi), n_missing(puuduvate väärtuste arv (NA)), complete_rate(täidetud väärtuste osakaal), mean(keskmine), sd(standard hälve), p0(miinimum (0. protsentiil)), p25(1. kvartiil (25%)), p50(mediaan (50%)), p75(3. kvartiil (75%)), p100(maksimum (100. protsentiil)), hist(minihistogramm)
+
+```{r}
+is_num <- sapply(df, is.numeric)
+sum(is_num)      # числовых
+sum(!is_num)     # нечисловых
+
+names(df)[is_num]
+names(df)[!is_num]
+```
+
+# Andmete eeltöötlus
+
+## Andmestiku puhastamine
+Eeltöötluse käigus kontrollitakse: </br>
+* dubleeritud andmeid, </br>
+* puuduvaid väärtusi, </br>
+* vajaduse korral teostan tüüpide teisendusi (nt sümbolkoodid faktoriteks). </br>
+
+## Duplikaatide kontroll
+
+```{r}
+sum(duplicated(df))
+```
+Kui duplikaate leidub, eemaldame need:
+
+```{r}
+df <- df[!duplicated(df), ]
+sum(duplicated(df))
+```
+## Puuduvate väärtuste kontroll
+Puuduvad väärtused kontrollitakse funktsiooni is.na() abil.
+
+```{r}
+# Kõigi NA-de koguarv
+sum(is.na(df))
+
+# Mitu rida sisaldab vähemalt ühte NA väärtust
+sum(!complete.cases(df))
+```
+
+Samuti on võimalik kindlaks teha, millistes tunnustes on puuduvad väärtused ja kui palju neid igas tunnuses on:
+
+```{r}
+colSums(is.na(df))
+```
+
+Kui mõnes teksttunnuses on tühjad lahtrid ("" või " "), teen need NA-ks ja asendan `Unknown`-iga:
+
+```{r}
+df <- df %>%
+  mutate(across(where(is.character), ~na_if(trimws(.x), ""))) %>%
+  mutate(across(where(is.character), ~replace_na(.x, "Unknown")))
+```
+
+## Faktortunnuste moodustamine
+Mitte-numbriliste tunnuste teisendamine teguriteks
+
+```{r}
+df <- df %>% mutate(across(where(is.character), as.factor))
+
+# Kontroll, et teisendus õnnestus
+skim(df)
+```
+
+# Andmete kirjeldav analüüs
+
+## Seoste analüüs
+
+Sihtmärgina (Y) valin **co2_emissions_g_km** (numbriline ja pidev märk).
+Seda mõjutavad:
+- kütusekulu näitajad (fuel_consumption_*),
+- mootori suurus (engine_size_l) ja silindrite arv (cylinders),
+- ning kategooriate näitajad (vehicle_class, fuel_type, transmission, make).
+
+## Seosed arvuliste tunnuste vahel
+Nagu näites, joonistame hajuvusdiagrammide maatriksi arvuliste tunnuste kohta.  
+
+
+```{r fig.width=11, fig.height=11}
+num_df <- Filter(is.numeric, df)
+
+# Hajuvusdiagrammide maatriks
+plot(num_df, pch = 20, cex = 0.5,)
+```
+
+Hajuvusdiagrammide maatriksist on näha, et co2_emissions_g_km on tugevas positiivses seoses kütusekulu näitajatega ning mootori suuruse ja silindrite arvuga. Samuti on näha, et fuel_consumption_comb_mpg ja fuel_consumption_comb_l_100_km on omavahel pöördvõrdelises seoses — need mõõdavad sama asja eri ühikutes. Tunnus model_year ei näita mingit seost, kuna kõik väärtused on 2022 </br>
+
+## Sihttunnuse seos mittearvuliste tunnustega
+Sihtmuutuja co2_emissions_g_km jaoks koostatakse kategooriate kaupa kastdiagrammid (boxplot).
+
+```{r}
+CharVar <- names(df)[!sapply(df, is.numeric)]
+
+par(mfrow=c(2,2))
+
+for(i in 1:min(length(CharVar),4)){
+  boxplot(df$co2_emissions_g_km ~ df[[CharVar[i]]],
+          xlab = CharVar[i],
+          ylab = "co2_emissions_g_km",
+          las = 2,
+          cex.axis = 0.7,
+          main = paste("CO2 vs", CharVar[i]))
+}
+
+par(mfrow=c(1,1))
+```
+
+On näha, et kõrgeima CO2 mediaaniga on Bugatti, Lamborghini ja Porsche (üle 400 g/km). Enamiku teiste tootjate mediaan jääb 200–300 g/km vahemikku. </br>
+
+#Kategoriseerimise tunnuse analüüs
+Valime kategooria tunnuse fuel_type (kütusetüüp).
+
+```{r}
+tab <- table(df$fuel_type)
+tab
+
+prop.table(tab)
+```
+Sagedustabel ja suhtelised sagedused näitavad iga kütusetüübi esinemissagedust andmestikus nii absoluutarvudes kui ka osakaaluna.
+D — diisel, E — etanool (E85), X — tavaline bensiin, Z — premium bensiin
+
+```{r fig.width=8, fig.height=5}
+barplot(
+  prop.table(tab) * 100,
+  ylab = "suht. sagedus, %",
+  main = "Tunnuse fuel_type suhteliste sageduste tulpdiagramm",
+  las = 2
+)
+```
+
+Tulpdiagrammilt nähtub, et valdav enamus sõidukeid kasutab bensiini — tavaline (X) ja premium (Z). Diisel (D) ja etanool (E) on vähe kasutuses.</br>
+
+# Arvulise tunnuse analüüs
+
+Näiteks **cylinders** (unikaalseid väärtusi on vähe).
+
+```{r}
+table(df$cylinders)
+prop.table(table(df$cylinders))
+```
+
+```{r fig.width=8, fig.height=5}
+barplot(
+  prop.table(table(df$cylinders)) * 100,
+  ylab = "suht. sagedus, %",
+  main = "Tunnuse cylinders suhteliste sageduste tulpdiagramm",
+  las = 2
+)
+```
+
+## Pidev tunnus
+Valime pidevaks tunnuseks **co2_emissions_g_km**
+
+```{r fig.width=8, fig.height=5}
+hist(df$co2_emissions_g_km, breaks = 30,
+     main = "co2_emissions_g_km histogramm",
+     xlab = "co2_emissions_g_km")
+```
+
+CO2 heited koonduvad vahemikku 200–350 g/km, ning üksikud kasvavad kuni 600 g/km.</br>
+
+```{r fig.width=6, fig.height=4}
+boxplot(df$co2_emissions_g_km,
+        main = "co2_emissions_g_km karpdiagramm",
+        ylab = "co2_emissions_g_km")
+```
+
+co2 mediaan on ~257 g/km, aga võib kasvada kuni 608 g/km.</br>
+
+```{r}
+summary(df$co2_emissions_g_km)
+
+mean(df$co2_emissions_g_km)
+median(df$co2_emissions_g_km)
+
+sd(df$co2_emissions_g_km)
+
+min(df$co2_emissions_g_km)
+max(df$co2_emissions_g_km)
+
+table(cut(df$co2_emissions_g_km, breaks = 10))
+```
+
+Võrdleme keskmist ja mediaani (jaotuse sümmeetria);
+
+Kontrollime hälvete olemasolu;
+
+Hindame minimaalseid ja maksimaalseid väärtusi.
+
+## Diskreetne tunnus, erinevate väärtuste arv on suur (> 20)
+
+Näiteks **fuel_consumption_comb_mpg** 
+
+```{r}
+length(unique(df$fuel_consumption_comb_mpg))
+```
+
+```{r fig.width=8, fig.height=5}
+hist(df$fuel_consumption_comb_mpg, breaks = 20,
+     main = "fuel_consumption_comb_mpg histogramm",
+     xlab = "fuel_consumption_comb_mpg")
+```
+
+Enamiku sõidukite kütusekulu jääb vahemikku 20–30 mpg (8-12 l/100km). </br>
+
+# Sihttunnuse sõltuvus kategoriaalsest tunnusest
+
+
+```{r fig.width=9, fig.height=5}
+boxplot(co2_emissions_g_km ~ fuel_type, data = df,
+        main = "CO2 jaotus kütusetüübi järgi",
+        xlab = "fuel_type", ylab = "co2_emissions_g_km", las = 2)
+```
+
+Kastdiagrammilt nähtub, et etanooli (E) mediaanne CO2 heide on kõrgeim, samas kui tavaline bensiin (X) on madalaima mediaaniga ja suurima hajuvusega. Premium bensiinil (Z) esineb mitmeid erindeid, mis viitab üksikutele kõrge CO2 heitega sõidukitele.
+
+---
+
+# Seminaritöö 2 {-}
+
+# Ülesanne 1
+
+Uurin sihttunnuse **co2_emissions_g_km** jaotuse vastavust normaaljaotusele.
+
+```{r fig.width=10, fig.height=5}
+par(mfrow = c(1, 2))
+
+hist(df$co2_emissions_g_km,
+     freq  = FALSE,
+     main  = "Tunnuse co2_emissions_g_km histogrammi\nvõrdlemine normaaljaotuse tihedusega",
+     xlab  = "CO2 heited (g/km)",
+     ylab  = "Tihedus",
+     cex.main = 0.8)
+
+lines(seq(min(df$co2_emissions_g_km), max(df$co2_emissions_g_km), by = 0.1),
+      dnorm(seq(min(df$co2_emissions_g_km), max(df$co2_emissions_g_km), by = 0.1),
+            mean(df$co2_emissions_g_km),
+            sd(df$co2_emissions_g_km)),
+      col = "blue")
+
+qqnorm(df$co2_emissions_g_km,
+       main    = "Q-Q plot",
+       xlab    = "Teoreetilised normaaljaotuse kvantiilid",
+       ylab    = "Tunnuse co2_emissions_g_km kvantiilid",
+       cex.lab = 0.8)
+
+qqline(df$co2_emissions_g_km)
+
+par(mfrow = c(1, 1))
+```
+
+Kontrollime normaaljaotusest kõrvalekallet ka Shapiro-Wilki testiga.
+
+```{r}
+shapiro.test(df$co2_emissions_g_km)
+```
+
+Tunnuse co2_emissions_g_km jaotus ei vasta normaaljaotusele. Histogrammilt on näha, et jaotus on paremale kaldu — enamik väärtusi koondub vahemikku 200–350 g/km, kuid esineb pikk parem saba kuni ~600 g/km. Q-Q graafikul kalduvad punktid oodatavalt sirgjoonelt kõrvale eriti jaotuse paremas otsas, mis kinnitab märgatavat positiivset asümmeetriat. Shapiro-Wilki testi p-väärtus on väiksem kui 0.05, mis kinnitab, et normaaljaotuse nullhüpotees lükatakse tagasi.
+
+# Ülesanne 2
+
+```{r message=FALSE, warning=FALSE}
+library(Rmisc)
+CI(df$co2_emissions_g_km)
+```
+
+95% usaldusintervall tunnuse co2_emissions_g_km keskväärtusele on (255.06; 263.28), keskväärtus on 259.17. Intervall on suhteliselt kitsas, mis tuleneb suure valimi suurusest (~`r nrow(df)` vaatlust).
+
+# Ülesanne 3–5 – Pavel Sarapov
+
+Valitud kategoriaalne tunnus: **fuel_type** (kütusetüüp) — näitas seminaritöös 1 kõige selgemat seost sihttunnusega co2_emissions_g_km (vt kastdiagramm).
+
+## Ülesanne 3
+
+Leian 95% usaldusintervallid tunnuse co2_emissions_g_km keskväärtusele tunnuse fuel_type iga rühma kohta.
+
+```{r message=FALSE, warning=FALSE}
+library(rcompanion)
+ryhmad <- groupwiseMean(co2_emissions_g_km ~ fuel_type,
+                        data   = df,
+                        conf   = 0.95,
+                        digits = 5)
+ryhmad
+```
+
+Leitud usaldusintervallid: D (`r round(ryhmad$Trad.lower[ryhmad$fuel_type=="D"],1)`; `r round(ryhmad$Trad.upper[ryhmad$fuel_type=="D"],1)`), E (`r round(ryhmad$Trad.lower[ryhmad$fuel_type=="E"],1)`; `r round(ryhmad$Trad.upper[ryhmad$fuel_type=="E"],1)`), X (`r round(ryhmad$Trad.lower[ryhmad$fuel_type=="X"],1)`; `r round(ryhmad$Trad.upper[ryhmad$fuel_type=="X"],1)`), Z (`r round(ryhmad$Trad.lower[ryhmad$fuel_type=="Z"],1)`; `r round(ryhmad$Trad.upper[ryhmad$fuel_type=="Z"],1)`). On näha, et rühmade vahel esineb märgatav erinevus ning mõned usaldusintervallid kattuvad, mis viitab, et nende rühmade keskmised erinevused ei pruugi olla statistiliselt olulised.
+
+## Ülesanne 4
+
+```{r fig.width=8, fig.height=4, message=FALSE, warning=FALSE}
+library(ggplot2)
+ggplot(ryhmad, aes(x = Mean, y = reorder(fuel_type, Mean))) +
+  geom_errorbarh(aes(xmin = Trad.lower, xmax = Trad.upper),
+                 height = 0.2) +
+  geom_point(size = 3, color = "steelblue") +
+  xlab("Keskmine CO2 heide (g/km)") +
+  ylab("Kütusetüüp") +
+  ggtitle("Tunnuse co2_emissions_g_km keskväärtuse usaldusintervallid\ntunnuse fuel_type rühmades") +
+  theme_minimal()
+```
+
+Cleveland plot diagrammilt on näha, et suurim erinevus sihttunnuse keskväärtustes esineb kütusetüüpide E (etanool) ja X (tavaline bensiin) vahel. Rühma E usaldusintervall on laiem, mis tuleneb väiksemast vaatluste arvust selles kategoorias. Rühmade X ja Z usaldusintervallid kattuvad osaliselt, mis viitab sarnasemale CO2 heite tasemele premium- ja tavalise bensiini kasutajate seas.
+
+## Ülesanne 5
+
+Graafiku põhjal on suurim erinevus keskväärtuste vahel rühmadel **E** (etanool, kõrgeim CO2) ja **X** (tavaline bensiin, madalaim CO2). Valisin need kaks rühma edasiseks analüüsiks.
+
+```{r fig.width=7, fig.height=5}
+df_test <- droplevels(subset(df, fuel_type %in% c("E", "X")))
+
+bpl <- boxplot(co2_emissions_g_km ~ fuel_type,
+               data = df_test,
+               main = "CO2 heited kütusetüüpides E ja X",
+               xlab = "Kütusetüüp",
+               ylab = "CO2 heited (g/km)",
+               col  = "skyblue")
+points(seq_len(length(bpl$n)),
+       tapply(df_test$co2_emissions_g_km,
+              df_test$fuel_type, mean),
+       col = "red", pch = 16, cex = 1.5)
+```
+
+```{r}
+aggregate(co2_emissions_g_km ~ fuel_type,
+          data = df_test,
+          FUN  = function(x) round(c(
+            n      = length(x),
+            mean   = mean(x),
+            sd     = sd(x),
+            min    = min(x),
+            Q1     = quantile(x, 0.25),
+            median = median(x),
+            Q3     = quantile(x, 0.75),
+            max    = max(x)
+          ), 2))
+```
+
+Rühmas X on vaatlusi märkimisväärselt rohkem kui rühmas E. Rühma E keskmine CO₂ heide on kõrgem, kuid ka hajuvam. Rühmas X esineb rohkem kõrgema CO₂ heitega erindeid.
+
+Hüpoteesid (α = 0.05):
+
+**H₀:** E ja X CO₂ heite mediaanid on võrdsed
+**H₁:** mediaanid on erinevad (kahepoolne test)
+
+Kuna andmed ei vasta normaaljaotusele, kasutan Wilcoxoni astaksumma testi (Mann-Whitney U).
+
+```{r}
+wilcox.test(co2_emissions_g_km ~ fuel_type, data = df_test, exact = FALSE)
+```
+
+Tulemus: p = 0.0009 < 0.05 → nullhüpotees lükatakse tagasi.
+Kütusetüüpide E (etanool) ja X (tavaline bensiin) CO₂ heited erinevad statistiliselt oluliselt — etanoolil on keskmine heide kõrgem, mis ühtib kastdiagrammil nähtuga.
+
+# Ülesanne 3–5 – Maksim Ljubimov
+
+Valitud kategoriaalne tunnus: **vehicle_class** (sõidukiklass) — sõidukiiri klass määrab oluliselt CO2 heite taset (nt SUVid vs. kompaktautod).
+
+## Ülesanne 3
+
+Leian 95% usaldusintervallid tunnuse co2_emissions_g_km keskväärtusele tunnuse vehicle_class iga rühma kohta.
+
+```{r message=FALSE, warning=FALSE}
+ryhmad_vc <- groupwiseMean(co2_emissions_g_km ~ vehicle_class,
+                           data   = df,
+                           conf   = 0.95,
+                           digits = 5)
+ryhmad_vc
+```
+
+Leitud usaldusintervallid on esitatud ülal. Mõnel sõidukiklassil on väike vaatluste arv, mis teeb usaldusintervalli laiemaks. Kõige kõrgema keskväärtusega rühmal **Pickup truck: Standard** on intervall (301.56; 317.25) ja madalaima keskväärtusega rühmal **Station wagon: Small** intervall (173.32; 211.63) — need kaks intervalli ei kattu, mis viitab statistiliselt olulisele erinevusele.
+
+## Ülesanne 4
+
+```{r fig.width=9, fig.height=6, message=FALSE, warning=FALSE}
+ggplot(ryhmad_vc, aes(x = Mean, y = reorder(vehicle_class, Mean))) +
+  geom_errorbarh(aes(xmin = Trad.lower, xmax = Trad.upper),
+                 height = 0.3) +
+  geom_point(size = 3, color = "steelblue") +
+  xlab("Keskmine CO2 heide (g/km)") +
+  ylab("Sõidukiklass") +
+  ggtitle("Tunnuse co2_emissions_g_km keskväärtuse usaldusintervallid\ntunnuse vehicle_class rühmades") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8))
+```
+
+Cleveland plot diagrammilt on näha, et CO2 heide erineb oluliselt sõidukiklasside vahel. Suurimad CO2 väärtused on SUV-del ja pikatele väntautodel (pickup truck), väiksemad kompaktautodel ja kaheistmelistel. Mitme rühma usaldusintervallid ei kattu, mis viitab statistiliselt olulistele erinevustele.
+
+## Ülesanne 5
+
+Graafiku põhjal valisin kaks kõige erinevama keskväärtusega klassi edasiseks võrdluseks.
+
+```{r fig.width=7, fig.height=5}
+# Leiame kaks rühma suurima ja väikseima keskväärtusega
+top2 <- ryhmad_vc[order(ryhmad_vc$Mean), ]
+klass_min <- as.character(top2$vehicle_class[1])
+klass_max <- as.character(top2$vehicle_class[nrow(top2)])
+
+df_test_vc <- droplevels(subset(df, vehicle_class %in% c(klass_min, klass_max)))
+
+bpl_vc <- boxplot(co2_emissions_g_km ~ vehicle_class,
+                  data = df_test_vc,
+                  main = paste("CO2 heited klassides:", klass_min, "ja", klass_max),
+                  xlab = "Sõidukiklass",
+                  ylab = "CO2 heited (g/km)",
+                  col  = "skyblue",
+                  las  = 2,
+                  cex.axis = 0.7)
+points(seq_len(length(bpl_vc$n)),
+       tapply(df_test_vc$co2_emissions_g_km,
+              df_test_vc$vehicle_class, mean),
+       col = "red", pch = 16, cex = 1.5)
+```
+
+```{r}
+aggregate(co2_emissions_g_km ~ vehicle_class,
+          data = df_test_vc,
+          FUN  = function(x) round(c(
+            n      = length(x),
+            mean   = mean(x),
+            sd     = sd(x),
+            min    = min(x),
+            Q1     = quantile(x, 0.25),
+            median = median(x),
+            Q3     = quantile(x, 0.75),
+            max    = max(x)
+          ), 2))
+```
+
+Analüüsiks valiti kaks kõige erinevama CO2 keskväärtusega klassi: **Pickup truck: Standard** (n=113, mean=309.41, median=306) ja **Station wagon: Small** (n=19, mean=192.47, median=200). Pickup truck'ide CO2 heide on keskmiselt 117 g/km kõrgem kui väikeste universaalide oma. Hajuvus on mõlemas rühmas sarnane (sd≈40–42 g/km).
+
+**H₀:** Pickup truck: Standard ja Station wagon: Small CO₂ mediaanid on võrdsed
+**H₁:** mediaanid on erinevad (α = 0.05, kahepoolne)
+
+Kuna andmed ei vasta normaaljaotusele, kasutan Wilcoxoni astaksumma testi.
+
+```{r}
+wilcox.test(co2_emissions_g_km ~ vehicle_class, data = df_test_vc, exact = FALSE)
+```
+
+p-väärtus 6.76e-12 on praktiliselt null — **nullhüpotees lükatakse tagasi**. Pickup truck'id heidavad keskmiselt 117 g/km rohkem CO₂ kui väikesed universaalid, erinevus on statistiliselt väga oluline.
+
+# Ülesanne 3–5 – Samuil Batsinski
+
+Valitud kategoriaalne tunnus: **make** (tootja) — autotootjad erinevad oluliselt oma mudelite CO2 heite poolest (nt spordiautode tootjad vs. tavalised massitootjad).
+
+## Ülesanne 3
+
+Leian 95% usaldusintervallid tunnuse co2_emissions_g_km keskväärtusele tunnuse make iga rühma kohta.
+
+```{r message=FALSE, warning=FALSE}
+ryhmad_make <- groupwiseMean(co2_emissions_g_km ~ make,
+                             data   = df,
+                             conf   = 0.95,
+                             digits = 5)
+ryhmad_make
+```
+
+Leitud usaldusintervallid kõigi tootjate kohta on esitatud ülal. Spordiautode tootjatel (nt Lamborghini) on usaldusintervall laiem, kuna nende mudelite arv andmestikus on väike.
+
+## Ülesanne 4
+
+```{r fig.width=10, fig.height=18, message=FALSE, warning=FALSE}
+ggplot(ryhmad_make, aes(x = Mean, y = reorder(make, Mean))) +
+  geom_errorbarh(aes(xmin = Trad.lower, xmax = Trad.upper),
+                 height = 0.4) +
+  geom_point(size = 2, color = "steelblue") +
+  xlab("Keskmine CO2 heide (g/km)") +
+  ylab("Tootja") +
+  ggtitle("Tunnuse co2_emissions_g_km keskväärtuse usaldusintervallid\ntunnuse make rühmades") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 7))
+```
+
+Cleveland plot diagrammilt on näha, et CO2 heide varieerub tootjate vahel väga suurel määral. Kõrgeima CO2 heite keskväärtusega on eksklusiivsete spordiautode tootjad, kellel on ka laiad usaldusintervallid väikese vaatluste arvu tõttu. Madalama CO2 heitega on masstootjad, kelle mudelivalik on laiem ja mitmekesisem. Enamiku suurtootjate usaldusintervallid kattuvad omavahel osaliselt.
+
+## Ülesanne 5
+
+Graafiku põhjal on suurim erinevus CO2 keskväärtustes tootjate vahel, kelle mudelid on CO2 heite poolest kõige äärmuslikumad. Analüüsi usaldusväärsuse tagamiseks valisin tootjad, kellel on piisav vaatluste arv (n ≥ 5).
+
+```{r fig.width=8, fig.height=5}
+ryhmad_make_filt <- ryhmad_make[ryhmad_make$n >= 5, ]
+
+make_min <- as.character(
+  ryhmad_make_filt$make[which.min(ryhmad_make_filt$Mean)])
+make_max <- as.character(
+  ryhmad_make_filt$make[which.max(ryhmad_make_filt$Mean)])
+
+df_test_make <- droplevels(subset(df, make %in% c(make_min, make_max)))
+
+bpl_make <- boxplot(co2_emissions_g_km ~ make,
+                    data = df_test_make,
+                    main = paste("CO2 heited tootjatel:", make_min, "ja", make_max),
+                    xlab = "Tootja",
+                    ylab = "CO2 heited (g/km)",
+                    col  = "skyblue")
+points(seq_len(length(bpl_make$n)),
+       tapply(df_test_make$co2_emissions_g_km,
+              df_test_make$make, mean),
+       col = "red", pch = 16, cex = 1.5)
+```
+
+```{r}
+aggregate(co2_emissions_g_km ~ make,
+          data = df_test_make,
+          FUN  = function(x) round(c(
+            n      = length(x),
+            mean   = mean(x),
+            sd     = sd(x),
+            min    = min(x),
+            Q1     = quantile(x, 0.25),
+            median = median(x),
+            Q3     = quantile(x, 0.75),
+            max    = max(x)
+          ), 2))
+```
+
+Analüüsiks valiti **Hyundai** (n=29, mean=188.83, median=185) ja **Lamborghini** (n=8, mean=418.88, median=377.5) — kõige erinevama CO2 keskväärtusega tootjad (n ≥ 5). Lamborghini CO2 heide on keskmiselt 230 g/km kõrgem kui Hyundail. Lamborghini hajuvus on samuti suurem (sd=63.26 vs 46.60), mis tuleneb mudelivaliku erinevusest.
+
+Sõnastan hüpoteesid ja kontrollin neid olulisuse nivool α = 0.05:
+
+**H₀:** Kahe valitud tootja CO2 heite mediaanid on võrdsed (erinevus = 0).
+**H₁:** Kahe valitud tootja CO2 heite mediaanid on erinevad (kahepoolne test).
+
+Kuna sihttunnus ei vasta normaaljaotusele, kasutan Wilcoxoni astaksumma testi.
+
+```{r}
+wilcox.test(co2_emissions_g_km ~ make, data = df_test_make, exact = FALSE)
+```
+
+Wilcoxoni testi p-väärtus on 2.02e-05 — väiksem kui α = 0.05, seega **lükatakse nullhüpotees tagasi**. Järeldus: kahe valitud tootja CO2 heited erinevad statistiliselt oluliselt, mis on kooskõlas kastdiagrammil ja kirjeldusliku statistikaga nähtuga.
+
+# Ülesanne 3–5 – Maksim Lupanov
+
+Valitud kategoriaalne tunnus: **transmission** (käigukast) — käigukasti tüüp mõjutab kütusekulu ja CO2 heidet (nt CVT vs. käsikäigukast).
+
+## Ülesanne 3
+
+Leian 95% usaldusintervallid tunnuse co2_emissions_g_km keskväärtusele tunnuse transmission iga rühma kohta.
+
+```{r message=FALSE, warning=FALSE}
+ryhmad_tr <- groupwiseMean(co2_emissions_g_km ~ transmission,
+                           data   = df,
+                           conf   = 0.95,
+                           digits = 5)
+ryhmad_tr
+```
+
+Tunnuse transmission koodide selgitus (Natural Resources Canada): eesliide tähistab käigukasti tüüpi, number tähistab käikude arvu.
+
+| Kood | Tüüp |
+|------|------|
+| A | Automaatkäigukast |
+| AM | Robotiseeritud käsikäigukast |
+| AS | Automaatkäigukast käsijuhtimisega |
+| AV | Pidevalt muutuva ülekandega käigukast (CVT) |
+| M | Käsikäigukast |
+
+Näiteks: M6 = käsikäigukast, 6 käiku; A8 = automaatkäigukast, 8 käiku; AV = CVT (käike ei ole).
+
+Leitud usaldusintervallid on esitatud ülal iga käigukasti tüübi kohta. Rühmade vahel esineb erinevusi CO2 heite keskväärtustes. Väiksema vaatluste arvuga tüüpidel on usaldusintervall laiem.
+
+## Ülesanne 4
+
+```{r fig.width=9, fig.height=7, message=FALSE, warning=FALSE}
+ggplot(ryhmad_tr, aes(x = Mean, y = reorder(transmission, Mean))) +
+  geom_errorbarh(aes(xmin = Trad.lower, xmax = Trad.upper),
+                 height = 0.3) +
+  geom_point(size = 2.5, color = "steelblue") +
+  xlab("Keskmine CO2 heide (g/km)") +
+  ylab("Käigukast") +
+  ggtitle("Tunnuse co2_emissions_g_km keskväärtuse usaldusintervallid\ntunnuse transmission rühmades") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8))
+```
+
+Cleveland plot diagrammilt on näha, et CO2 heide erineb käigukasti tüüpide vahel. Mõned tüübid kattuvad usaldusintervallidega, samas teised erinevad selgelt. Rühmad, millel on väike vaatluste arv, omavad laia usaldusintervalli, mis muudab järeldused vähem usaldusväärseks.
+
+## Ülesanne 5
+
+Graafiku põhjal on suurim erinevus CO2 keskväärtustes kahe kõige äärmuslikuma käigukasti tüübi vahel. Valisin tüübid, millel on piisav vaatluste arv (n ≥ 5) ja suurim erinevus keskväärtustes.
+
+```{r fig.width=7, fig.height=5}
+ryhmad_tr_filt <- ryhmad_tr[ryhmad_tr$n >= 5, ]
+
+tr_min <- as.character(
+  ryhmad_tr_filt$transmission[which.min(ryhmad_tr_filt$Mean)])
+tr_max <- as.character(
+  ryhmad_tr_filt$transmission[which.max(ryhmad_tr_filt$Mean)])
+
+df_test_tr <- droplevels(subset(df, transmission %in% c(tr_min, tr_max)))
+
+bpl_tr <- boxplot(co2_emissions_g_km ~ transmission,
+                  data = df_test_tr,
+                  main = paste(tr_min, "ja", tr_max),
+                  xlab = "Käigukast",
+                  ylab = "CO2 heited (g/km)",
+                  col  = "skyblue")
+points(seq_len(length(bpl_tr$n)),
+       tapply(df_test_tr$co2_emissions_g_km,
+              df_test_tr$transmission, mean),
+       col = "red", pch = 16, cex = 1.5)
+```
+
+```{r}
+aggregate(co2_emissions_g_km ~ transmission,
+          data = df_test_tr,
+          FUN  = function(x) round(c(
+            n      = length(x),
+            mean   = mean(x),
+            sd     = sd(x),
+            min    = min(x),
+            Q1     = quantile(x, 0.25),
+            median = median(x),
+            Q3     = quantile(x, 0.75),
+            max    = max(x)
+          ), 2))
+```
+
+Graafiku põhjal valisin kaks rühma: **AM6** (robotiseeritud käsikäigukast, 6 käiku) ja **A10** (automaatkäigukast, 10 käiku). Kastdiagrammilt on näha, et A10 rühma CO2 väärtused on märksa kõrgemad — keskmine 321 g/km versus AM6 puhul 124 g/km. AM6 valimi maht on väike (n=10), mistõttu tuleb järeldusi teha ettevaatlikult.
+
+Sõnastan hüpoteesid ja kontrollin neid olulisuse nivool α = 0.05:
+
+**H₀:** Kahe valitud käigukasti tüübi CO2 heite mediaanid on võrdsed (erinevus = 0).
+**H₁:** Kahe valitud käigukasti tüübi CO2 heite mediaanid on erinevad (kahepoolne test).
+
+Kuna sihttunnus ei vasta normaaljaotusele, kasutan Wilcoxoni astaksumma testi.
+
+```{r}
+wilcox.test(co2_emissions_g_km ~ transmission, data = df_test_tr, exact = FALSE)
+```
+
+Wilcoxoni testi p-väärtus on 3.40e-07 — väiksem kui α = 0.05, seega **lükatakse nullhüpotees tagasi**. Järeldus: kahe valitud käigukasti tüübi CO2 heited erinevad statistiliselt oluliselt, mis on kooskõlas kastdiagrammil ja kirjeldusliku statistikaga nähtuga.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

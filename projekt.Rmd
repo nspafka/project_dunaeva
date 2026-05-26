@@ -1,0 +1,640 @@
+---
+title: "2022 aasta sõidukite CO2 heite analüüs"
+
+subtitle: "Projekt õppeaines RAM0580 Andmeanalüüs"
+
+author: "<br>Koostajad: Maksim Ljubimov, Maksim Lupanov, Pavel Sarapov, Samuil Batsinski <br>"
+
+date: "Esitatud: 27.05.2026 <br>"
+
+output:
+  html_document:
+    toc: true
+    toc_depth: 4
+    toc_float:
+      collapsed: false
+    number_sections: true
+    theme: default
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+<br><br>
+
+# Sissejuhatus
+
+## Andmestiku kirjeldus
+
+Selles projektis kasutame andmestikku **FuelConsumption.csv**, mis pärineb Kanada Loodusvarade Ameti (Natural Resources Canada) 2022. aasta sõidukite kütusekulu reitingute andmebaasist.
+
+**Allikas:** Natural Resources Canada, *2022 Fuel Consumption Ratings*
+
+**Mõõtmisaeg:** 2022. aasta mudeliaasta sõidukid, andmed kogutud enne müügile jõudmist.
+
+**Tunnused:**
+
+| Tunnus | Kirjeldus | Tüüp |
+|--------|-----------|------|
+| make | Tootja | Kategooriline |
+| model | Mudel | Kategooriline |
+| vehicle_class | Sõidukiklass | Kategooriline |
+| engine_size_l | Mootori maht (liitrites) | Arvuline |
+| cylinders | Silindrite arv | Arvuline |
+| transmission | Käigukast (kood: tüüp + käikude arv, nt M6 = käsikäigukast 6 käiguga) | Kategooriline |
+| fuel_type | Kütusetüüp (D = diisel, E = etanool E85, X = tavaline bensiin, Z = premium bensiin) | Kategooriline |
+| fuel_consumption_city_l_100_km | Kütusekulu linnas (L/100 km) | Arvuline |
+| fuel_consumption_hwy_l_100_km | Kütusekulu maanteel (L/100 km) | Arvuline |
+| fuel_consumption_comb_l_100_km | Kombineeritud kütusekulu (L/100 km) - põhiühik | Arvuline |
+| fuel_consumption_comb_mpg | Kombineeritud kütusekulu (mpg, lisainfo) | Arvuline |
+| **co2_emissions_g_km** | **CO2 heide (g/km) - sihttunnus Y** | Arvuline |
+| co2_rating | CO2 reiting (1-10, kus 10 = kõige väiksem heide) | Arvuline |
+| smog_rating | Sudu reiting (1-10, kus 10 = kõige puhtam) | Arvuline |
+
+**Käigukasti tüüpide selgitus:**
+
+| Kood | Tüüp |
+|------|------|
+| A | Automaatkäigukast |
+| AM | Robotiseeritud käsikäigukast |
+| AS | Automaatkäigukast käsijuhtimisega |
+| AV | Pidevalt muutuva ülekandega käigukast (CVT) |
+| M | Käsikäigukast |
+
+Arv koodi järel näitab käikude arvu (nt A8 = automaatkäigukast 8 käiguga; AV-l käike ei ole).
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(janitor)
+library(skimr)
+library(DT)
+
+raw <- read.csv("SAMPLE/FuelConsumption.csv", check.names = FALSE)
+df  <- clean_names(raw)
+
+cat("Objektide arv:", nrow(df), "\n")
+cat("Tunnuste arv:",  ncol(df), "\n")
+```
+
+Andmestikus on **`r nrow(df)` objekti** (sõidukit) ja **`r ncol(df)` tunnust**.
+
+## Uurimiseesmärk
+
+Eesmärk on uurida, millised sõiduki omadused mõjutavad CO2 heidet (g/km) 2022. aasta Kanada turul müüdavate sõidukite puhul. Sihttunnuseks on valitud **co2_emissions_g_km**, mis näitab, kui palju CO2 sõiduk kilomeetri kohta õhku heidab. Kütusekulu mõõdetakse ühikus liitrit 100 km kohta (L/100 km). Andmestikus on ka mpg (miles per gallon), mis on Ameerika mõõtühik ja näitab sama asja vastupidises suunas - seda kasutame ainult lisainfona.
+
+## Tööhüpoteesid (tööülesanded)
+
+Iga rühmaliige vastutab ühe hüpoteesi eest:
+
+| # | Hüpotees | Meetod | Vastutaja |
+|---|----------|--------|-----------|
+| H1 | CO2 heide erineb statistiliselt oluliselt erinevate sõidukiklasside vahel | ANOVA | Maksim Ljubimov |
+| H2 | Premium bensiini (Z) ja tavalise bensiini (X) kasutajate CO2 heite keskväärtused on erinevad | t-test | Pavel Sarapov |
+| H3 | CO2 heidet on võimalik ennustada mootori mahu ja silindrite arvu põhjal | Regressioonanalüüs | Maksim Lupanov |
+| H4 | Kütusetüüp ja sõidukiklass ei ole teineteisest sõltumatud | Hii-ruut test | Samuil Batsinski |
+
+## Uuringu käik
+
+Analüüs koosneb neljast osast:
+
+1. **Andmete ettevalmistamine** - andmestiku laadimine, korrastamine, duplikaatide ja puuduvate väärtuste eemaldamine.
+2. **Esmaanalüüs** - tunnuste jaotuste kirjeldamine graafikute ja arvkarakteristikutega; sihttunnuse Y eraldi vaatlus.
+3. **Seoste analüüs** - sihttunnuse Y seos teiste tunnustega.
+4. **Hüpoteeside kontrollimine** - iga rühmaliige kontrollib oma hüpoteesi valitud meetodiga, olulisuse nivool α = 0,05.
+
+Kasutatud tarkvara: **R** koos pakettidega `tidyverse`, `janitor`, `skimr`, `DT`, `ggplot2`.
+
+<br><br>
+
+# Andmete ettevalmistamine
+
+## Andmete laadimine
+
+Andmestik laaditakse CSV-failist. Allolev tabel võimaldab andmeid sirvida.
+
+```{r message=FALSE, warning=FALSE}
+datatable(
+  df,
+  options = list(scrollX = TRUE, pageLength = 10, searching = FALSE,
+                 scroller = TRUE, scrollY = 300)
+)
+```
+
+## Andmestiku ülevaade
+
+`str()` näitab andmestiku struktuuri: ridade ja veergude arv ning iga tunnuse tüüp.
+
+```{r}
+str(df)
+
+n_obj <- nrow(df)
+n_var <- ncol(df)
+n_obj; n_var
+```
+
+Andmestikus on **`r n_obj` objekti** ja **`r n_var` tunnust**.
+
+`skim()` annab täpsema kokkuvõtte: arvuliste tunnuste puhul näitab keskväärtust, standardhälvet ja kvartiilid; kategooriliste puhul unikaalsete väärtuste arvu.
+
+```{r}
+skim(df)
+```
+
+```{r}
+is_num <- sapply(df, is.numeric)
+cat("Arvulised tunnused:", sum(is_num), "\n")
+cat("Mittearvulised tunnused:", sum(!is_num), "\n\n")
+cat("Arvulised:", paste(names(df)[is_num],  collapse = ", "), "\n")
+cat("Mittearvulised:", paste(names(df)[!is_num], collapse = ", "), "\n")
+```
+
+## Duplikaatide kontroll
+
+Duplikaadid on read, kus kõik väärtused korduvad täpselt - sama sõiduk on sisestatud mitu korda. Need eemaldatakse.
+
+```{r}
+cat("Duplikaatide arv enne puhastamist:", sum(duplicated(df)), "\n")
+df <- df[!duplicated(df), ]
+cat("Duplikaatide arv pärast puhastamist:", sum(duplicated(df)), "\n")
+```
+
+## Puuduvate väärtuste kontroll
+
+Puuduvad väärtused (NA) on lahtrid, kus andmed puuduvad. Statistilised funktsioonid ei tule NA-dega hästi toime, seega kontrollime nende olemasolu.
+
+```{r}
+cat("NA-de koguarv:", sum(is.na(df)), "\n")
+cat("Ridade arv vähemalt ühe NA-ga:", sum(!complete.cases(df)), "\n")
+colSums(is.na(df))
+```
+
+Teksttunnustes kontrollime ka tühje lahtreid, mis ei ole NA, aga tähendavad samuti puuduvat väärtust. Need asendatakse väärtusega `Unknown`.
+
+```{r}
+df <- df %>%
+  mutate(across(where(is.character), ~na_if(trimws(.x), ""))) %>%
+  mutate(across(where(is.character), ~replace_na(.x, "Unknown")))
+```
+
+## Faktortunnuste moodustamine
+
+Tekstina loetud kategoorilised tunnused teisendatakse faktoriteks. Faktor on R-is kategooriliste andmete tüüp, mida on vaja statistiliste testide (ANOVA, hii-ruut) ja graafikute jaoks.
+
+```{r}
+df <- df %>% mutate(across(where(is.character), as.factor))
+skim(df)
+```
+
+## Grupimahtude kontroll
+
+Enne analüüsi kontrollime, mitu vaatlust iga kategoorilise tunnuse igas rühmas on. Väga väikese valimiga rühmade tulemused on ebausaldusväärsed.
+
+```{r}
+cat("=== Tootja (make) - vaatluste arv ===\n")
+sort(table(df$make))
+```
+
+Tootjatest on **FIAT** esindatud vaid 1 sõidukiga ja **Bugatti** 3 sõidukiga - neid ei saa eraldi statistilises analüüsis kasutada, kuna valim on liiga väike. Kui analüüsis kasutatakse tootjaid, rakendatakse filtrit n >= 5.
+
+```{r}
+cat("=== Sõidukiklass (vehicle_class) - vaatluste arv ===\n")
+sort(table(df$vehicle_class))
+
+cat("\n=== Kütusetüüp (fuel_type) - vaatluste arv ===\n")
+sort(table(df$fuel_type))
+```
+
+Sõidukiklassidest on **Minivan** (n=7) ja **Station wagon: Mid-size** (n=8) väikese valimiga - ANOVA annab nende kohta vähem usaldusväärseid tulemusi. Kütusetüübist on **etanool E85** (E, n=14) kõige vähem esindatud.
+
+<br><br>
+
+# Andmestiku esmaanalüüs
+
+## Arvuliste tunnuste ülevaade
+
+Allolev hajuvusdiagrammide maatriks näitab kõigi arvuliste tunnuste vahelisi seoseid korraga. Iga ruut näitab kahe tunnuse hajuvusdiagrammi.
+
+```{r fig.width=11, fig.height=11}
+num_df <- Filter(is.numeric, df)
+plot(num_df, pch = 20, cex = 0.5)
+```
+
+Põhilised tähelepanekud:
+
+- **co2_emissions_g_km** on tugevas positiivses seoses kütusekulu näitajatega linnas, maanteel ja kombineeritult (L/100 km) - mida rohkem kütust kulub, seda suurem CO2 heide.
+- **fuel_consumption_comb_mpg** näitab CO2 heite suhtes vastupidist seost - see on oodatav, kuna suurem mpg tähendab väiksemat kütusekulu. Põhianalüüsis kasutame L/100 km ühikut; mpg on ainult lisainfo.
+- **engine_size_l** (mootori maht) ja **cylinders** (silindrite arv) on positiivses seoses CO2 heite ja kütusekulu näitajatega.
+- **co2_rating** ja **smog_rating** on CO2 heite põhjal arvutatud reitingud - nende tugev seos sihttunnusega on oodatav.
+- **model_year** ei näita seost - kõik sõidukid on 2022. aasta mudelid, seega väärtus on kõikidel sama.
+
+## Kategooriliste tunnuste ülevaade
+
+### Kütusetüüp (fuel_type)
+
+Kütusetüübi koodide selgitus:
+
+- **D** - diiselkütus
+- **E** - etanool (E85: 85% etanooli ja 15% bensiini)
+- **X** - tavaline bensiin (regular gasoline, oktaaniarv 87)
+- **Z** - premium bensiin (premium gasoline, oktaaniarv 91 ja rohkem)
+
+```{r fig.width=8, fig.height=4}
+tab_ft <- table(df$fuel_type)
+tab_ft
+prop.table(tab_ft)
+
+nimed_ft <- c("D (diisel)", "E (etanool E85)", "X (tavaline bensiin)", "Z (premium bensiin)")
+barplot(
+  prop.table(tab_ft) * 100,
+  names.arg = nimed_ft,
+  ylab      = "Suht. sagedus, %",
+  main      = "Kütusetüüpide (fuel_type) suhteliste sageduste tulpdiagramm",
+  las       = 2,
+  cex.names = 0.8
+)
+```
+
+Suurem osa andmestiku sõidukitest kasutab bensiini - tavaline bensiin (X) ja premium bensiin (Z) moodustavad koos üle 90% vaatlustest. Diisel (D) ja etanool (E) on selgelt väiksemad grupid. Etanooli (E, n=14) puhul tuleb arvestada, et väike valim annab vähem usaldusväärseid tulemusi.
+
+### Sõidukiklass (vehicle_class)
+
+Sõidukiklass iseloomustab sõiduki tüüpi ja suurust. See on üks peamisi CO2 heidet mõjutavaid tegureid, kuna suuremad ja raskemad sõidukid kulutavad tavaliselt rohkem kütust.
+
+```{r fig.width=10, fig.height=4}
+tab_vc <- sort(table(df$vehicle_class), decreasing = TRUE)
+tab_vc
+
+barplot(
+  prop.table(tab_vc) * 100,
+  ylab      = "Suht. sagedus, %",
+  main      = "Sõidukiklasside (vehicle_class) suhteliste sageduste tulpdiagramm",
+  las       = 2,
+  cex.names = 0.6
+)
+```
+
+Andmestikus on kõige rohkem SUV-e (väike ja standard) ning keskmise suurusega sõiduautosid. Pikapid on samuti hästi esindatud. Minivänid (n=7) ja keskmise suurusega universaalid (Station wagon: Mid-size, n=8) on kõige väiksema valimiga klassid.
+
+### Käigukast (transmission)
+
+Käigukasti tüüp ja käikude arv võivad mõjutada kütusekulu.
+
+| Kood | Tüüp | Selgitus |
+|------|------|----------|
+| A | Automaatkäigukast | Käigud vahetuvad automaatselt |
+| AM | Robotiseeritud käsikäigukast | Käsikäigukast automaatse siduri ja käiguvahetusega |
+| AS | Automaatkäigukast käsijuhtimisega | Automaatkäigukast, mida saab ka käsitsi juhtida |
+| AV | CVT (pidevalt muutuv ülekanne) | Käike ei ole, ülekandearv muutub pidevalt |
+| M | Käsikäigukast | Juht vahetab käike ise |
+
+Arv koodi järel = käikude arv (nt A8 = 8-käiguline automaat; M6 = 6-käiguline käsikäigukast; AV-l käike ei ole).
+
+```{r fig.width=10, fig.height=4}
+tab_tr <- sort(table(df$transmission), decreasing = TRUE)
+tab_tr
+
+barplot(
+  prop.table(tab_tr) * 100,
+  ylab      = "Suht. sagedus, %",
+  main      = "Käigukastide (transmission) suhteliste sageduste tulpdiagramm",
+  las       = 2,
+  cex.names = 0.7
+)
+```
+
+Kõige levinumad on 8-käiguline automaatkäigukast (A8) ja 9-käiguline automaatkäigukast käsijuhtimisega (AS9). Käsikäigukastid (M) on selgelt vähemusse jäänud. Käikude arv ulatub ühest (AV) kuni kümneni.
+
+## Sihttunnuse co2_emissions_g_km analüüs
+
+CO2 heide (g/km) näitab, mitu grammi CO2 sõiduk kilomeetri jooksul õhku heidab. Mida madalam väärtus, seda keskkonnasõbralikum sõiduk.
+
+```{r fig.width=10, fig.height=5}
+par(mfrow = c(1, 2))
+
+hist(df$co2_emissions_g_km, breaks = 30,
+     main = "CO2 heite (g/km) histogramm",
+     xlab = "CO2 heide (g/km)",
+     ylab = "Sagedus")
+
+boxplot(df$co2_emissions_g_km,
+        main = "CO2 heite (g/km) karpdiagramm",
+        ylab = "CO2 heide (g/km)")
+
+par(mfrow = c(1, 1))
+```
+
+```{r}
+summary(df$co2_emissions_g_km)
+cat("Standardhälve:", round(sd(df$co2_emissions_g_km), 2), "\n")
+```
+
+CO2 heite mediaan on **`r median(df$co2_emissions_g_km)` g/km** ja keskmine **`r round(mean(df$co2_emissions_g_km), 1)` g/km**. Keskmine on mediaanist kõrgem, mis tähendab, et jaotus on paremale kaldu - enamik sõidukeid jääb vahemikku 200-350 g/km, aga üksikud kõrge heitega erindid (tõenäoliselt spordi- ja luksussõidukid) tõmbavad keskmist ülespoole.
+
+<br><br>
+
+# Seoste analüüs
+
+## Arvuliste tunnuste vahelised seosed
+
+```{r fig.width=11, fig.height=11}
+num_df <- Filter(is.numeric, df)
+plot(num_df, pch = 20, cex = 0.5)
+```
+
+Peamised järeldused:
+
+- Kütusekulu L/100 km (linn, maantee, kombineeritud) on CO2 heite tugevaim ennustaja - seos on selgelt lineaarne.
+- Kütusekulu linnasõidul on kõrgem kui maanteel, kuna linnas on rohkem pidurdamisi ja kiirendusi.
+- **fuel_consumption_comb_mpg** näitab pöördvõrdelist seost - see on matemaatiliselt paratamatu, kuna suurem mpg tähendab väiksemat kütusekulu. Kasutame L/100 km; mpg on ainult viitena.
+- Mootori maht ja silindrite arv on positiivses seoses CO2 heite ja kütusekulu näitajatega.
+- model_year ei näita seost, kuna kõik vaatlused on 2022. aastast.
+
+## Sihttunnuse seos kategooriliste tunnustega
+
+Kastdiagrammid näitavad CO2 heite jaotust iga kategooria kaupa.
+
+```{r fig.width=12, fig.height=10}
+CharVar <- names(df)[!sapply(df, is.numeric)]
+CharVar <- CharVar[CharVar != "model"]  # model on välja jäetud - liiga palju unikaalseid väärtusi
+
+par(mfrow = c(2, 2))
+for(i in 1:min(length(CharVar), 4)){
+  boxplot(df$co2_emissions_g_km ~ df[[CharVar[i]]],
+          xlab     = CharVar[i],
+          ylab     = "CO2 heide (g/km)",
+          las      = 2,
+          cex.axis = 0.6,
+          main     = paste("CO2 vs", CharVar[i]))
+}
+par(mfrow = c(1, 1))
+```
+
+Kastdiagrammidelt on näha:
+
+- **make (tootja):** Eksklusiivsete spordiautode tootjad (nt Bugatti, Lamborghini) paistavad graafikul selgelt silma kõrge CO2 heite poolest. Siiski tuleb arvestada, et Bugatti (n=3) ja FIAT (n=1) on esindatud väga väheste vaatlustega - nende tulemused ei ole statistiliselt usaldusväärsed, aga visuaalselt näitab see hälvet hästi.
+- **vehicle_class (sõidukiklass):** Pikapid ja suuremad SUV-id on kõrgema CO2 heite tasemega, kompaktautod ja väikeautod madalama.
+- **transmission (käigukast):** Teatud käigukastide vahel on erinevusi näha, aga hajuvus igas rühmas on suur.
+- **fuel_type (kütusetüüp):** Diisel (D) ja etanool (E) erinevad selgelt bensiini (X ja Z) rühmadest.
+
+<br><br>
+
+# Tööülesannete lahendamine
+
+## Ülesanne 1 – Maksim Ljubimov: ANOVA
+
+**Hüpotees H1:** CO2 heide erineb statistiliselt oluliselt erinevate sõidukiklasside vahel.
+
+- **H0:** Kõigi sõidukiklasside CO2 heite keskväärtused on võrdsed.
+- **H1:** Vähemalt ühe sõidukiklassi CO2 heite keskväärtus erineb ülejäänutest (α = 0,05).
+
+ANOVA (dispersioonanalüüs) testib, kas kolme või enama rühma keskväärtused on võrdsed. Erinevalt t-testist, mis võrdleb kahte rühma, sobib ANOVA kõigi sõidukiklasside korraga võrdlemiseks.
+
+```{r fig.width=11, fig.height=5}
+boxplot(co2_emissions_g_km ~ vehicle_class, data = df,
+        main     = "CO2 heide (g/km) sõidukiklassi järgi",
+        xlab     = "Sõidukiklass",
+        ylab     = "CO2 heide (g/km)",
+        las      = 2,
+        cex.axis = 0.6,
+        col      = "lightblue")
+```
+
+Kastdiagrammilt on näha, et pikapid (Pickup truck) ja suuremad SUV-id on selgelt kõrgema CO2 mediaanega võrreldes kompaktautode ja väikeautodega. Minivan (n=7) ja Station wagon: Mid-size (n=8) on väikese valimiga klassid, millega seotud tulemused on vähem usaldusväärsed.
+
+```{r}
+model_aov <- aov(co2_emissions_g_km ~ vehicle_class, data = df)
+summary(model_aov)
+```
+
+ANOVA väljundis vaatame F-statistikut ja p-väärtust (Pr(>F)). Kui p < 0,05, siis vähemalt kahe sõidukiklassi keskväärtused erinevad statistiliselt oluliselt.
+
+```{r fig.width=10, fig.height=9}
+tukey <- TukeyHSD(model_aov)
+par(mar = c(5, 18, 4, 2))
+plot(tukey, las = 1, cex.axis = 0.55,
+     xlab = "Keskväärtuste vahe (95% usaldusintervall)")
+```
+
+Tukey HSD post-hoc test näitab, millised konkreetsed klassipaarid üksteisest statistiliselt oluliselt erinevad. Graafikul tähistab nulljoont (0) mitte lõikuv usaldusintervall statistiliselt olulist erinevust.
+
+Kui p < 0,05, **lükatakse nullhüpotees tagasi** - CO2 heide erineb oluliselt vähemalt kahe sõidukiklassi vahel.
+
+---
+
+## Ülesanne 2 – Pavel Sarapov: t-test
+
+**Hüpotees H2:** Premium bensiini (Z, oktaaniarv 91+) ja tavalise bensiini (X, oktaaniarv 87) kasutajate CO2 heite keskväärtused on erinevad.
+
+- **H0:** μ(Z) = μ(X) - keskväärtused on võrdsed.
+- **H1:** μ(Z) ≠ μ(X) - keskväärtused on erinevad (kahepoolne test, α = 0,05).
+
+t-test võrdleb kahe sõltumatu rühma keskväärtusi. Kasutame **Welchi t-testi** (var.equal = FALSE), mis ei eelda rühmade dispersioonide võrdsust. Kuna mõlemad valimid on suured (n > 30), on Keskse Piirväärtuse Teoreemi põhjal keskväärtuse normaaljaotus piisavalt tagatud.
+
+```{r fig.width=7, fig.height=5}
+df_ttest <- droplevels(subset(df, fuel_type %in% c("X", "Z")))
+
+boxplot(co2_emissions_g_km ~ fuel_type, data = df_ttest,
+        main     = "CO2 heide (g/km): tavaline bensiin (X) vs premium bensiin (Z)",
+        xlab     = "Kütusetüüp",
+        ylab     = "CO2 heide (g/km)",
+        names    = c("X (tavaline bensiin)", "Z (premium bensiin)"),
+        col      = "lightblue",
+        cex.axis = 0.85)
+points(seq_len(2),
+       tapply(df_ttest$co2_emissions_g_km, df_ttest$fuel_type, mean),
+       col = "red", pch = 16, cex = 1.5)
+legend("topright", legend = "Punane punkt = keskmine", pch = 16, col = "red", cex = 0.8)
+```
+
+```{r}
+aggregate(co2_emissions_g_km ~ fuel_type, data = df_ttest,
+          FUN = function(x) round(c(
+            n      = length(x),
+            mean   = mean(x),
+            sd     = sd(x),
+            median = median(x)
+          ), 2))
+```
+
+Kirjeldav statistika näitab mõlema rühma suurust (n), keskväärtust, standardhälvet ja mediaani. Kui keskväärtused visuaalselt erinevad, kontrollib t-test, kas see erinevus on statistiliselt oluline või juhuslik.
+
+```{r}
+t.test(co2_emissions_g_km ~ fuel_type, data = df_ttest, var.equal = FALSE)
+```
+
+Welchi t-testi väljundis vaatame p-väärtust ja 95% usaldusintervalli keskväärtuste vahele.
+
+Kui p < 0,05, **lükatakse nullhüpotees tagasi** - premium bensiin (Z, oktaaniarv 91+) ja tavaline bensiin (X, oktaaniarv 87) kasutajate sõidukite CO2 heite keskväärtused erinevad statistiliselt oluliselt.
+
+---
+
+## Ülesanne 3 – Maksim Lupanov: Regressioonanalüüs
+
+**Hüpotees H3:** CO2 heidet on võimalik ennustada mootori mahu (`engine_size_l`, liitrites) ja silindrite arvu (`cylinders`) põhjal lineaarse regressiooni abil.
+
+- **H0:** β1 = β2 = 0 - kumbki prediktor ei mõjuta CO2 heidet.
+- **H1:** Vähemalt üks regressioonikoefitsient erineb nullist (α = 0,05).
+
+Lineaarne regressioon modelleerib sihttunnuse lineaarset sõltuvust prediktortest. Mudeli kuju: CO2 = β0 + β1 × engine_size + β2 × cylinders + viga. R² näitab, kui suure osa CO2 heite varieeruvusest mudel seletab (vahemikus 0 kuni 1, kus 1 = täiuslik ennustus).
+
+```{r fig.width=10, fig.height=4}
+par(mfrow = c(1, 2))
+
+plot(df$engine_size_l, df$co2_emissions_g_km,
+     pch  = 20, cex = 0.5,
+     xlab = "Mootori maht (L)",
+     ylab = "CO2 heide (g/km)",
+     main = "CO2 vs mootori maht (L)")
+abline(lm(co2_emissions_g_km ~ engine_size_l, data = df), col = "red", lwd = 2)
+
+plot(df$cylinders, df$co2_emissions_g_km,
+     pch  = 20, cex = 0.5,
+     xlab = "Silindrite arv",
+     ylab = "CO2 heide (g/km)",
+     main = "CO2 vs silindrite arv")
+abline(lm(co2_emissions_g_km ~ cylinders, data = df), col = "red", lwd = 2)
+
+par(mfrow = c(1, 1))
+```
+
+Mõlema prediktori ja CO2 heite vahel on näha positiivne seos - suurem mootor ja rohkem silindrid tähendavad kõrgemat CO2 heidet. Punane joon on lihtne lineaarne regressioonijoon.
+
+```{r}
+model_lm <- lm(co2_emissions_g_km ~ engine_size_l + cylinders, data = df)
+summary(model_lm)
+```
+
+Mudeli väljundist vaatame:
+
+- **Estimate (koefitsiendid):** Mitu g/km suureneb CO2 heide, kui prediktor suureneb ühe ühiku võrra (mootori maht 1 liitri või silindrite arv 1 silindri võrra), hoides teise prediktori muutumatuks.
+- **p-väärtused:** Kas iga prediktor on mudeli jaoks oluline (p < 0,05).
+- **R² (Multiple R-squared):** Kui suur osa CO2 heite varieeruvusest on seletatav mootori mahu ja silindrite arvuga.
+- **F-statistik:** Mudeli üldine olulisus.
+
+```{r fig.width=10, fig.height=8}
+par(mfrow = c(2, 2))
+
+# 1. Jäägid vs sobitatud väärtused
+plot(fitted(model_lm), residuals(model_lm),
+     main = "Jäägid vs sobitatud väärtused",
+     xlab = "Sobitatud väärtused",
+     ylab = "Jäägid",
+     pch = 20, cex = 0.5)
+abline(h = 0, col = "red", lty = 2)
+lines(lowess(fitted(model_lm), residuals(model_lm)), col = "red")
+
+# 2. Normaal-kvantiilide graafik
+qqnorm(rstandard(model_lm),
+       main = "Normaal-kvantiilide graafik (Q-Q)",
+       xlab = "Teoreetilised kvantiilid",
+       ylab = "Standardiseeritud jäägid")
+qqline(rstandard(model_lm), col = "red")
+
+# 3. Mastaap-asukoha graafik
+plot(fitted(model_lm), sqrt(abs(rstandard(model_lm))),
+     main = "Mastaap-asukoht",
+     xlab = "Sobitatud väärtused",
+     ylab = "sqrt(|standardiseeritud jäägid|)",
+     pch = 20, cex = 0.5)
+lines(lowess(fitted(model_lm), sqrt(abs(rstandard(model_lm)))), col = "red")
+
+# 4. Jäägid vs hoovus
+plot(hatvalues(model_lm), rstandard(model_lm),
+     main = "Jäägid vs hoovus",
+     xlab = "Hoovus (leverage)",
+     ylab = "Standardiseeritud jäägid",
+     pch = 20, cex = 0.5)
+abline(h = c(-2, 0, 2), lty = c(2, 1, 2), col = c("blue", "gray", "blue"))
+
+par(mfrow = c(1, 1))
+```
+
+Diagnostikagraafikud kontrollivad mudeli eeldusi: **Jäägid vs sobitatud väärtused** näitab, kas jäägid on juhuslikud (ei tohiks olla selget mustrit); **Normaal-kvantiilide graafik (Q-Q)** kontrollib jääkide normaaljaotust (punktid peaksid järgima punast sirget); **Mastaap-asukoht** näitab, kas hajuvus on ühtlane; **Jäägid vs hoovus** tuvastab mõjukad erindid, mis mudeli tulemust tugevalt mõjutavad.
+
+Kui F-testi p < 0,05, **lükatakse nullhüpotees tagasi** - mudel on statistiliselt oluline.
+
+---
+
+## Ülesanne 4 – Samuil Batsinski: Hii-ruut test
+
+**Hüpotees H4:** Kütusetüüp (`fuel_type`) ja sõidukiklass (`vehicle_class`) ei ole sõltumatud - need tunnused on omavahel seotud.
+
+- **H0:** Kütusetüüp ja sõidukiklass on sõltumatud tunnused.
+- **H1:** Kütusetüüp ja sõidukiklass on omavahel seotud (α = 0,05).
+
+Hii-ruut sõltumatuse test kontrollib, kas kahe kategoorilise tunnuse jaotused sõltuvad teineteisest. Kui sõidukiklass ei mõjutaks kütusetüüpi, peaks kütusetüüpide jaotus olema kõikides klassides ligikaudu sama. Seos tähendaks, et teatud klassides (nt pikapid) kasutatakse rohkem teatud kütust (nt diisel).
+
+```{r}
+tab_chi <- table(df$fuel_type, df$vehicle_class)
+tab_chi
+```
+
+Sagedustabel näitab iga kütusetüübi ja sõidukiklassi kombinatsiooni vaatluste arvu. Paljud lahtrid on nullid - teatud klassides ei kasutata teatud kütust üldse.
+
+```{r fig.width=11, fig.height=5}
+tab_prop <- prop.table(tab_chi, margin = 2) * 100
+
+nimed_legend <- c("D (diisel)", "E (etanool E85)", "X (tavaline bensiin)", "Z (premium bensiin)")
+
+barplot(
+  tab_prop,
+  beside      = FALSE,
+  las         = 2,
+  cex.names   = 0.55,
+  col         = c("steelblue", "tomato", "seagreen", "gold"),
+  legend.text = nimed_legend,
+  args.legend = list(x = "topright", cex = 0.75, bg = "white"),
+  main = "Kütusetüüpide jaotus sõidukiklassi järgi (% igas klassis)",
+  ylab = "Osakaal igas sõidukiklassis (%)"
+)
+```
+
+Tulpdiagramm näitab kütusetüüpide osakaalu igas sõidukiklassis. Kui jaotus oleks kõikides klassides sama, tähendaks see, et tunnused on sõltumatud. Silmaga nähtavad erinevused (nt sinine diisel (D) erineva osakaaluga eri klassides) viitavad võimalikule seosele.
+
+```{r}
+chi_test <- chisq.test(tab_chi)
+chi_test
+```
+
+Kontrollin hii-ruut testi põhinõuet - oodatavad sagedused igas lahtris peavad olema vähemalt 5. Väiksemad oodatavad sagedused muudavad testi tulemuse ebausaldusväärseks.
+
+```{r}
+cat("Minimaalne oodatav sagedus:", round(min(chi_test$expected), 2), "\n")
+cat("Lahtreid oodatava sagedusega < 5:", sum(chi_test$expected < 5), "\n")
+```
+
+Kui p < 0,05, **lükatakse nullhüpotees tagasi** - kütusetüüp (D=diisel, E=etanool, X=tavaline bensiin, Z=premium bensiin) ja sõidukiklass on statistiliselt oluliselt seotud ehk kütusetüübi valik sõltub sõidukiklassist.
+
+<br><br>
+
+# Kokkuvõte
+
+Selles projektis analüüsisime 2022. aasta Kanada turu sõidukite CO2 heidet (g/km) **`r nrow(df)` sõiduki** andmete põhjal, kasutades nelja erinevat statistilist meetodit.
+
+**Hüpoteeside tulemuste kokkuvõte:**
+
+| # | Hüpotees | Meetod | Vastutaja | Otsus |
+|---|----------|--------|-----------|-------|
+| H1 | CO2 heide erineb sõidukiklasside vahel | ANOVA | M. Ljubimov | *(vt ülesanne 1)* |
+| H2 | Premium bensiin (Z) ja tavaline bensiin (X) erinevad CO2 poolest | t-test | P. Sarapov | *(vt ülesanne 2)* |
+| H3 | CO2 ennustatav mootori mahu ja silindrite arvu põhjal | Regressioon | M. Lupanov | *(vt ülesanne 3)* |
+| H4 | Kütusetüüp ja sõidukiklass on seotud | Hii-ruut | S. Batsinski | *(vt ülesanne 4)* |
+
+Analüüsi põhjal selgus, et CO2 heidet mõjutavad oluliselt nii sõiduki tehnilised omadused (mootori maht, silindrite arv) kui ka kategoorilised tunnused (kütusetüüp, sõidukiklass). Tulemused ühtivad eelnevate seminaritööde järeldustega.
+
+<br><br>
+
+# Kasutatud materjalid
+
+1. Natural Resources Canada (2022). *2022 Fuel Consumption Ratings*.
+2. Wickham, H. et al. (2019). Welcome to the tidyverse. *Journal of Open Source Software*, 4(43), 1686.
+3. Firke, S. (2023). *janitor: Simple Tools for Examining and Cleaning Dirty Data*. R package version 2.2.0.
+4. Waring, E. et al. (2022). *skimr: Compact and Flexible Summaries of Data*. R package version 2.1.5.
+
+# Lisa
+
+```{r}
+sessionInfo()
+```
