@@ -616,10 +616,10 @@ Selles projektis analüüsisime 2022. aasta Kanada turu sõidukite CO2 heidet (g
 
 | # | Hüpotees | Meetod | Vastutaja | Otsus |
 |---|----------|--------|-----------|-------|
-| H1 | CO2 heide erineb sõidukiklasside vahel | ANOVA | M. Ljubimov | *(vt ülesanne 1)* |
-| H2 | Premium bensiin (Z) ja tavaline bensiin (X) erinevad CO2 poolest | t-test | P. Sarapov | *(vt ülesanne 2)* |
-| H3 | CO2 ennustatav mootori mahu ja silindrite arvu põhjal | Regressioon | M. Lupanov | *(vt ülesanne 3)* |
-| H4 | Kütusetüüp ja sõidukiklass on seotud | Hii-ruut | S. Batsinski | *(vt ülesanne 4)* |
+| H1 | CO2 heide erineb sõidukiklasside vahel | ANOVA | M. Ljubimov | H0 lükatakse tagasi — CO2 heide erineb oluliselt klasside vahel (pikapid ja SUV-id kõrgemad kui kompaktautod). |
+| H2 | Premium (Z) ja tavaline bensiin (X) erinevad CO2 poolest | t-test | P. Sarapov | H0 lükatakse tagasi — premium bensiini kasutavate sõidukite CO2 heide on oluliselt kõrgem. |
+| H3 | CO2 ennustatav mootori mahu ja silindrite arvu põhjal | Regressioon | M. Lupanov | H0 lükatakse tagasi — mõlemad prediktorid on olulised (p < 0,05), suurem mootor = suurem heide. |
+| H4 | Kütusetüüp ja sõidukiklass ei ole sõltumatud | Hii-ruut | S. Batsinski | H0 lükatakse tagasi — kütusetüübi jaotus erineb oluliselt sõidukiklasside vahel. |
 
 Analüüsi põhjal selgus, et CO2 heidet mõjutavad oluliselt nii sõiduki tehnilised omadused (mootori maht, silindrite arv) kui ka kategoorilised tunnused (kütusetüüp, sõidukiklass). Tulemused ühtivad eelnevate seminaritööde järeldustega.
 
