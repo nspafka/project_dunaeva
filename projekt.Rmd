@@ -627,10 +627,7 @@ Analüüsi põhjal selgus, et CO2 heidet mõjutavad oluliselt nii sõiduki tehni
 
 # Kasutatud materjalid
 
-1. Natural Resources Canada (2022). *2022 Fuel Consumption Ratings*.
-2. Wickham, H. et al. (2019). Welcome to the tidyverse. *Journal of Open Source Software*, 4(43), 1686.
-3. Firke, S. (2023). *janitor: Simple Tools for Examining and Cleaning Dirty Data*. R package version 2.2.0.
-4. Waring, E. et al. (2022). *skimr: Compact and Flexible Summaries of Data*. R package version 2.1.5.
+1. Natural Resources Canada (2022). *2022 Fuel Consumption Ratings*. https://www.kaggle.com/datasets/rinichristy/2022-fuel-consumption-ratings
 
 # Lisa
 
